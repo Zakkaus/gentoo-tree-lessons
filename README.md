@@ -47,6 +47,20 @@ Drop the relevant `docs/` topics into your bump/review workflow context; pick
 from the `Automatable checks` sections when writing scripted QA. When a rule
 seems off, look up its sha in gentoo/gentoo and read the original commit.
 
+## 更新 / Refreshing (可持续)
+
+    make refresh      # 更新 corpus -> 重新分类 -> 记录 provenance / update corpus -> reclassify -> record provenance
+    make check        # 校验数据+文档(CI 跑的就是这个)/ validate data+docs (what CI runs)
+    make mine         # 重新挖掘(需要 Claude Code harness)/ re-mine (needs the harness)
+
+增量:`python3 tools/classify.py --since <sha或日期>` 只分类新提交(对应「优先扫新增」)。
+`data/PROVENANCE.json` 记录数据基于哪个 corpus revision,所以刷新可复现、可 diff。语料克隆 `.corpus/`
+被 gitignore(用 `make corpus` 拉)。CI(`.github/workflows/ci.yml`)在每次 push 跑 `make check`。
+
+Incremental: `python3 tools/classify.py --since <sha-or-date>` classifies only new commits ("scan new
+first"). `data/PROVENANCE.json` pins the corpus revision so refreshes are reproducible and diffable. The
+corpus clone `.corpus/` is gitignored (`make corpus` fetches it). CI runs `make check` on every push.
+
 ## 说明 / Notes
 
 - 分类是纯规则脚本;分析和归纳由 Claude Fable 5(`claude-fable-5`)以并行

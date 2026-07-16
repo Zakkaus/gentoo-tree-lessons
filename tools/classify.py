@@ -21,13 +21,29 @@ Categories (first match wins, ordered by specificity):
 
 Output: JSONL, one object per commit, newest first.
 """
+import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 
-REPO = sys.argv[1] if len(sys.argv) > 1 else "/var/tmp/gentoo-history"
-LIMIT = sys.argv[2] if len(sys.argv) > 2 else "60000"
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ap = argparse.ArgumentParser(description="classify gentoo/gentoo commits (deterministic)")
+_ap.add_argument("--corpus", default=os.environ.get("GENTOO_CORPUS") or os.path.join(_repo_root, ".corpus"),
+                 help="path to a gentoo/gentoo git clone (env GENTOO_CORPUS; default <repo>/.corpus)")
+_ap.add_argument("--limit", default=os.environ.get("LIMIT", "60000"), help="git log -N cap")
+_ap.add_argument("--since", default=None,
+                 help="incremental: a ref (uses <ref>..HEAD) or a date (uses --since=<date>)")
+_ap.add_argument("--out", default=None, help="output JSONL path (default: stdout)")
+_ap.add_argument("corpus_pos", nargs="?", help=argparse.SUPPRESS)  # back-compat: classify.py <corpus> [limit]
+_ap.add_argument("limit_pos", nargs="?", help=argparse.SUPPRESS)
+_A = _ap.parse_args()
+REPO = _A.corpus_pos or _A.corpus
+LIMIT = _A.limit_pos or _A.limit
+SINCE = _A.since
+OUTPATH = _A.out
+FMT = "%x1e%H%x00%cs%x00%an%x00%s%x00%b"
 
 BUG_RE = re.compile(r"(?:bugs\.gentoo\.org/|[Bb]ug #?)(\d{4,7})")
 CVE_RE = re.compile(r"CVE-\d{4}-\d+")
@@ -37,9 +53,17 @@ def sh(*args):
     return subprocess.run(["git", "-C", REPO, *args], capture_output=True, text=True).stdout
 
 def main():
-    # %x00-separated fields, %x1e between commits; --name-status for file ops
-    raw = sh("log", f"-{LIMIT}", "--format=%x1e%H%x00%cs%x00%an%x00%s%x00%b", "--name-status")
-    out = sys.stdout
+    # %x00-separated fields, %x1e between commits; --name-status for file ops.
+    # --since: a ref does <ref>..HEAD (only new commits); a date does --since=<date>.
+    log_args = ["log", f"--format={FMT}", "--name-status"]
+    if SINCE and re.fullmatch(r"[0-9a-fA-F]{7,40}", SINCE):
+        log_args.insert(1, f"{SINCE}..HEAD")
+    elif SINCE:
+        log_args.insert(1, f"--since={SINCE}")
+    else:
+        log_args.insert(1, f"-{LIMIT}")
+    raw = sh(*log_args)
+    out = open(OUTPATH, "w") if OUTPATH else sys.stdout
     n = 0
     for chunk in raw.split("\x1e"):
         chunk = chunk.strip("\n")
